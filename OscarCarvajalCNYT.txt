@@ -1,0 +1,113 @@
+import numpy as np
+from src.quantum_sim import normalize, position_probabilities, transition_prob
+
+m1 = np.array([[0,0,0,0,0,0],
+               [0,0,0,0,0,0],
+               [0,1,0,0,0,1],
+               [0,0,0,1,0,0],
+               [0,0,1,0,0,0],
+               [1,0,0,0,1,0]], dtype=complex)
+
+v1 = np.array([[6],[2],[1],[5],[3],[10]], dtype=complex)
+psi0 = normalize(v1)
+print("Initial probabilities:", position_probabilities(psi0))
+psi1 = m1.dot(psi0)
+print("Probabilities after one click (normalized):", position_probabilities(psi1))
+
+import numpy as np
+
+def normalize(ket):
+    ket = np.asarray(ket, dtype=np.complex128).reshape(-1)
+    norm = np.linalg.norm(ket)
+    if norm == 0:
+        raise ValueError("Zero norm vector; cannot normalize.")
+    return ket.reshape(-1,1) / norm
+
+def position_probabilities(ket):
+    ket = normalize(ket)
+    probs = np.abs(ket.flatten())**2
+    return probs
+
+def prob_position(ket, i):
+    probs = position_probabilities(ket)
+    return float(probs[i])
+
+def inner_amplitude(psi, phi):
+    psi = np.asarray(psi, dtype=np.complex128).reshape(-1)
+    phi = np.asarray(phi, dtype=np.complex128).reshape(-1)
+    return np.vdot(phi, psi)  # <phi|psi>
+
+def transition_prob(psi, phi):
+    amp = inner_amplitude(psi, phi)
+    return float(np.abs(amp)**2)
+
+def is_hermitian(A, tol=1e-10):
+    A = np.asarray(A, dtype=np.complex128)
+    return np.allclose(A, A.conj().T, atol=tol)
+
+def expectation(A, psi):
+    A = np.asarray(A, dtype=np.complex128)
+    psi = normalize(psi)
+    val = np.vdot(psi.flatten(), A.dot(psi).flatten())
+    return float(np.real_if_close(val))
+
+def variance(A, psi):
+    A = np.asarray(A, dtype=np.complex128)
+    psi = normalize(psi)
+    expA = expectation(A, psi)
+    expA2 = np.vdot(psi.flatten(), A.dot(A.dot(psi)).flatten())
+    var = np.real_if_close(expA2) - expA**2
+    return float(np.real(var))
+
+def diagonalize_observable(A):
+    A = np.asarray(A, dtype=np.complex128)
+    if not is_hermitian(A):
+        raise ValueError("Matrix is not Hermitian.")
+    vals, vecs = np.linalg.eigh(A)
+    return vals, vecs
+
+def collapse_probabilities(A, psi):
+    vals, vecs = diagonalize_observable(A)
+    psi = normalize(psi)
+    probs = []
+    for k in range(vecs.shape[1]):
+        ak = vecs[:,k].reshape(-1,1)
+        p = transition_prob(psi, ak)
+        probs.append(float(p))
+    return vals, np.array(probs)
+
+def apply_unitaries(us, psi0):
+    psi = normalize(psi0)
+    for U in us:
+        U = np.asarray(U, dtype=np.complex128)
+        if U.shape[0] != U.shape[1] or U.shape[0] != psi.shape[0]:
+            raise ValueError("Unitary size mismatch.")
+        if not np.allclose(U.conj().T.dot(U), np.eye(U.shape[0]), atol=1e-8):
+            raise ValueError("Non-unitary operator detected.")
+        psi = U.dot(psi)
+    return normalize(psi)
+
+import numpy as np
+from src.quantum_sim import normalize, position_probabilities, transition_prob, is_hermitian, expectation, variance, diagonalize_observable
+
+def test_normalize_and_probs():
+    v = np.array([[1],[1],[0]], dtype=complex)
+    psi = normalize(v)
+    probs = position_probabilities(psi)
+    assert abs(probs.sum() - 1.0) < 1e-9
+
+def test_transition_prob_symmetry():
+    a = np.array([[1],[0],[0]], dtype=complex)
+    b = np.array([[0],[1],[0]], dtype=complex)
+    assert transition_prob(a,b) == 0.0
+    assert transition_prob(a,a) == 1.0
+
+def test_observable_eigen_and_expectation():
+    A = np.diag([1,-1,1]).astype(complex)
+    psi = normalize(np.array([[1],[1],[1]], dtype=complex))
+    assert is_hermitian(A)
+    vals, vecs = diagonalize_observable(A)
+    exp = expectation(A, psi)
+    var = variance(A, psi)
+    assert isinstance(exp, float)
+    assert isinstance(var, float)
